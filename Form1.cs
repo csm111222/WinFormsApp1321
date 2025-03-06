@@ -18,7 +18,7 @@ namespace WinFormsApp1321
         {
             if (isOn)  // 当前是开启状态，点击后要关闭
             {
-                StopCalibration();  // 关闭自校准模式并取消任务
+                StopCalibration(true);  // 关闭自校准模式并取消任务
             }
             else
             {
@@ -56,7 +56,7 @@ namespace WinFormsApp1321
                     cancellationTokenSource = new CancellationTokenSource();
                     CancellationToken token = cancellationTokenSource.Token;
                     /*  var token = cancellationTokenSource.Token;*/
-                    Task.Run(() => RunCalibrationLoop(token));
+                    Task.Run(() => RunCalibrationLoop(selectedStandardFile, token));
 
                     //状态
                     isOn = true;
@@ -86,7 +86,7 @@ namespace WinFormsApp1321
         }
         private void button3_Click(object sender, EventArgs e)
         {
-            // 复位状态
+           /* // 复位状态
             //isCalibrationMode = false;
             isOn = false;
 
@@ -100,21 +100,60 @@ namespace WinFormsApp1321
             button2.Text = "检测模式关闭";
 
             MessageBox.Show("系统已恢复为待机状态！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            StopCalibration();
+         //   StopCalibration(true);*/
         }
 
-       
-        private byte[]? lastReceivedA = null; // 存储上次收到的 A
-        private byte[]? lastReceivedB = null; // 存储上次收到的 B
+        /*  private async Task RunCalibrationLoop(string selectedStandardFile, CancellationToken token)
+          {
+              DateTime lastCycleEndTime = DateTime.Now;
+              string iniPath = "C:\\system\\system.ini";
 
-        private async Task RunCalibrationLoop(CancellationToken token)
+              while (currentCycle < totalCycles)
+              {
+                  if (token.IsCancellationRequested)
+                  {
+                      MessageBox.Show("自校准任务已停止！", "停止", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                      StopCalibration();
+                      return;
+                  }
+
+                  currentCycle++;
+                  UpdateCycleLabel();
+
+                  bool isMatched = CompareIniFiles("D:\\标样\\样管1.ini", selectedStandardFile);
+
+                  if (!isMatched)
+                  {
+                      MessageBox.Show("出现缺陷数据异常！", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                      StopCalibration();
+                      return;
+                  }
+
+                  lastCycleEndTime = DateTime.Now;  // 记录本次循环的结束时间
+
+                  if (currentCycle >= totalCycles)
+                  {
+                      MessageBox.Show("检测完成！所有循环已执行。", "完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                      DateTime validUntil = lastCycleEndTime.AddHours(2); // 计算有效期限
+                      WriteDeadlineToIni(iniPath, validUntil);  // 写入 system.ini
+                      UpdateValidUntilLabel(validUntil); // 更新 UI
+
+                      StopCalibration();
+                  }
+
+                  await Task.Delay(10000, token);
+              }
+          }*/
+        private async Task RunCalibrationLoop(string selectedStandardFile, CancellationToken token)
         {
-            TimeSpan dataTimeout = TimeSpan.FromSeconds(20);
-            // currentCycle = 0;
             DateTime lastCycleEndTime = DateTime.Now;
             string iniPath = "C:\\system\\system.ini";
+            string sampleFolder = "D:\\标样\\yangguang"; // 样管文件夹路径
 
-            while (currentCycle <= totalCycles)
+            int fileIndex = 1; // 样管文件索引
+
+            while (currentCycle < totalCycles)
             {
                 if (token.IsCancellationRequested)
                 {
@@ -125,34 +164,21 @@ namespace WinFormsApp1321
 
                 currentCycle++;
                 UpdateCycleLabel();
-                DateTime dataStartTime = DateTime.Now;
-                // 等待 A 和 B 都收到数据
-                while (lastReceivedA == null || lastReceivedB == null)
+
+                // 生成当前循环的样管文件名
+                string sampleFile = Path.Combine(sampleFolder, $"样管{fileIndex}.ini");
+
+                // 检查文件是否存在
+                if (!File.Exists(sampleFile))
                 {
-                    if (DateTime.Now - dataStartTime > dataTimeout)
-                    {
-                        MessageBox.Show("超时未接收到数据，任务已停止！", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        StopCalibration();
-                        return;
-                    }
-                    await Task.Delay(100); 
-                }
-
-                // 合并数据
-                bool isMatched = TryMergeAndCheckDefects(lastReceivedA, lastReceivedB);
-
-                // 清空数据
-                lastReceivedA = null;
-                lastReceivedB = null;
-
-                if (!isMatched)
-                {
-                    MessageBox.Show("检测不合格，出现误检或缺陷未检出！", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show($"缺少样管文件: {sampleFile}！", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     StopCalibration();
                     return;
                 }
 
-                if (currentCycle > totalCycles)
+              
+
+                if (currentCycle >= totalCycles)
                 {
                     MessageBox.Show("检测完成！所有循环已执行。", "完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
@@ -160,74 +186,18 @@ namespace WinFormsApp1321
                     WriteDeadlineToIni(iniPath, validUntil); // 写入 system.ini
                     UpdateValidUntilLabel(validUntil); // 更新 UI
 
-                    StopCalibration();
+                    this.Invoke(new Action(() =>
+                    {
+                        button2.Enabled = true;  // 只有成功完成才启用检测模式
+                    }));
+
+                    StopCalibration(false);
                 }
 
-                await Task.Delay(10000, token); // 等待 10 秒
+                await Task.Delay(10000, token); // 等待 10 秒，进入下一次循环
             }
         }
-
-        private bool TryMergeAndCheckDefects(byte[]? dataA, byte[]? dataB)
-        {
-            if (dataA == null || dataB == null || dataA.Length < 6 || dataB.Length < 6)
-            {
-                MessageBox.Show("接收到的数据格式错误！", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return false;
-            }
-
-            // 误检检查
-            if (dataA[0] == 0xA1 || dataB[0] == 0xA1)
-            {
-                MessageBox.Show("误检发生，检测不合格！", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return false; // A 或 B 一个误检就立即停止
-            }
-
-            int defectCountA = BitConverter.ToInt32(dataA, 2);  // 缺陷数量
-            int defectCountB = BitConverter.ToInt32(dataB, 2);  // 缺陷数量
-
-            if (defectCountA != defectCountB)
-            {
-                MessageBox.Show("A 和 B 缺陷数量不一致，检测不合格！", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return false;
-            }
-
-            // 合并 A 和 B 的缺陷位置
-            bool[] defectPositions = new bool[defectCountA];  // 假设 A 和 B 的缺陷数量相同
-
-            for (int i = 6; i < dataA.Length; i++)  // 从第7个字节开始是缺陷检测结果
-            {
-                // 如果 A 或 B 其中一个有缺陷就认为该位置已经检测出来
-                defectPositions[i - 6] = (dataA[i] == 0xA0 || dataB[i] == 0xA0);
-            }
-
-            // 检查是否所有缺陷都被检测出
-            foreach (bool detected in defectPositions)
-            {
-                if (!detected)
-                {
-                    MessageBox.Show("缺陷位置未检出，检测不合格！", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return false; // 如果有位置未检出，则检测不合格
-                }
-            }
-
-            return true; // 通过检测
-        }
-        // 处理接收数据
-        private void ProcessReceivedData(byte[] receivedData)
-        {
-            if (receivedData.Length < 2) return;
-
-            if (receivedData[2] == 0xAA) // 涡流 A
-            {
-                lastReceivedA = receivedData;
-            }
-            else if (receivedData[2] == 0xBB) // 涡流 B
-            {
-                lastReceivedB = receivedData;
-            }
-        }
-
-
+    
 
         private void WriteDeadlineToIni(string iniPath, DateTime deadline)
         {
@@ -386,32 +356,58 @@ namespace WinFormsApp1321
             }
         }
 
-
-        private void StopCalibration()
+        private void StopCalibration(bool isManualStop = false)
         {
             if (cancellationTokenSource != null)
             {
-                cancellationTokenSource.Cancel();  // 取消任务
-                cancellationTokenSource.Dispose(); // 释放资源
+                cancellationTokenSource.Cancel();
+                cancellationTokenSource.Dispose();
                 cancellationTokenSource = null;
             }
+
+            bool isCalibrationSuccessful = (currentCycle > 0 && currentCycle >= totalCycles);
 
             currentCycle = 0;
             totalCycles = 0;
             isOn = false;
 
-            // 在UI线程上更新
             this.Invoke(new Action(() =>
             {
                 button1.Text = "自校准模式关闭";
                 label1.Text = "当前状态：待机状态";
                 label2.Text = "当前循环次数：0";
-                button2.Enabled = true;  // 启用按钮2
+
+                // 手动停止 or 异常终止，都应该禁用检测模式
+                button2.Enabled = isCalibrationSuccessful && !isManualStop;
             }));
         }
 
 
-       
+        /*  private void StopCalibration()
+          {
+              if (cancellationTokenSource != null)
+              {
+                  cancellationTokenSource.Cancel();  // 取消任务
+                  cancellationTokenSource.Dispose(); // 释放资源
+                  cancellationTokenSource = null;
+              }
+
+              currentCycle = 0;
+              totalCycles = 0;
+              isOn = false;
+
+              // 在UI线程上更新
+              this.Invoke(new Action(() =>
+              {
+                  button1.Text = "自校准模式关闭";
+                  label1.Text = "当前状态：待机状态";
+                  label2.Text = "当前循环次数：0";
+                  button2.Enabled = true;  // 启用按钮2
+              }));
+          }*/
+
+
+
 
         /* private Dictionary<string, int> ReadIniValues(string iniPath, string section)
          {
@@ -444,19 +440,19 @@ namespace WinFormsApp1321
          }*/
 
 
-      /*  private int ReadIniTolerance(string iniPath)
-        {
-            string[] lines = File.ReadAllLines(iniPath);
-            foreach (string line in lines)
-            {
-                if (line.StartsWith("Value=") && int.TryParse(line.Split('=')[1].Trim(), out int tolerance))
-                {
-                    return tolerance;
-                }
-            }
-            return 10; // 默认误差±10
-        }
-*/
+        /*  private int ReadIniTolerance(string iniPath)
+          {
+              string[] lines = File.ReadAllLines(iniPath);
+              foreach (string line in lines)
+              {
+                  if (line.StartsWith("Value=") && int.TryParse(line.Split('=')[1].Trim(), out int tolerance))
+                  {
+                      return tolerance;
+                  }
+              }
+              return 10; // 默认误差±10
+          }
+  */
         private void toolStripComboBox1_Click(object sender, EventArgs e)
         {
 
