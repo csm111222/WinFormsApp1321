@@ -14,6 +14,73 @@ namespace WinFormsApp1321
         {
             InitializeComponent();
         }
+        public class CalibrationDataParser
+        {
+            public static Dictionary<string, object> ParseStandardFile(string filePath)
+            {
+                var dictionary = new Dictionary<string, object>();
+
+                try
+                {
+                    string[] lines = File.ReadAllLines(filePath);
+
+                    string barcode = null;
+                    float tolerance = 0;
+                    List<float> defectPositions = new List<float>();
+
+                    // 解析文件内容
+                    bool isInDefectPositionsSection = false;
+
+                    foreach (string line in lines)
+                    {
+                        string trimmedLine = line.Trim();
+
+                        // 跳过空行或注释
+                        if (string.IsNullOrEmpty(trimmedLine) || trimmedLine.StartsWith(";"))
+                            continue;
+
+                        // 条码
+                        if (barcode == null)
+                        {
+                            barcode = trimmedLine;
+                            dictionary["List"] = barcode;
+                        }
+                        // wc
+                        else if (trimmedLine.StartsWith("[Tolerance]"))
+                        {
+                            isInDefectPositionsSection = false;
+                        }
+                        else if (trimmedLine.StartsWith("Value="))
+                        {
+                            tolerance = float.Parse(trimmedLine.Split('=')[1].Trim());
+                            dictionary["Tolerance"] = tolerance;
+                        }
+                        // 缺陷位置
+                        else if (trimmedLine.StartsWith("[DefectPositions]"))
+                        {
+                            isInDefectPositionsSection = true;
+                        }
+                        else if (isInDefectPositionsSection && trimmedLine.StartsWith("Post"))
+                        {
+                            var positionStr = trimmedLine.Split('=')[1].Trim();
+                            if (float.TryParse(positionStr, out float position))
+                            {
+                                defectPositions.Add(position);
+                            }
+                        }
+                    }
+
+                    dictionary["DefectPositions"] = defectPositions;
+
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"读取标样文件失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+
+                return dictionary;
+            }
+        }
         private void button1_Click(object sender, EventArgs e)
         {
             if (isOn)  // 当前是开启状态，点击后要关闭
@@ -49,6 +116,10 @@ namespace WinFormsApp1321
 
 
                     string selectedStandardFile = selectionForm.StandardFilePath;
+
+                    var calibrationData = CalibrationDataParser.ParseStandardFile(selectedStandardFile);
+
+
                     totalCycles = selectionForm.CalibrationCount;
                     currentCycle = 0;
 
@@ -71,19 +142,58 @@ namespace WinFormsApp1321
         private void button2_Click(object sender, EventArgs e)
         {
 
-
-
-            label1.Text = "当前状态：检测模式";
-            isOn = !isOn; // 切换状态
-            button2.Text = isOn ? "检测模式已开启" : "检测模式关闭";
-            if (isOn == false)
+            if (isOn)  // 当前是检测模式，点击后要关闭检测模式
             {
-                label1.Text = "当前状态：待机状态";
+                StopDetection();  // 停止检测模式并返回待机状态
             }
-            //MessageBox.Show("检测模式已关闭！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            button1.Enabled = !isOn;
+            else
+            {
+                // 进入检测模式
+                Form2 detectionForm = new Form2();
+                detectionForm.Show();  // 显示检测模式界面
+
+                // 禁用自校准按钮
+                button1.Enabled = false;
+
+                // 状态更新
+                isOn = true;
+                button2.Text = "退出检测模式";  // 修改按钮文本为“退出检测模式”
+                label1.Text = "当前状态：检测模式";  // 状态显示为检测模式
+            }
+
+            /*
+                   label1.Text = "当前状态：检测模式";
+               isOn = !isOn; // 切换状态
+               button2.Text = isOn ? "检测模式已开启" : "检测模式关闭";
+               if (isOn == false)
+               {
+                   label1.Text = "当前状态：待机状态";
+               }
+               //MessageBox.Show("检测模式已关闭！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+               button1.Enabled = !isOn;*/
 
         }
+        private void StopDetection()
+        {
+            // 关闭检测模式界面（Form2）
+            foreach (Form form in Application.OpenForms)
+            {
+                if (form is Form2)
+                {
+                    form.Close();  // 关闭 Form2
+                    break;
+                }
+            }
+
+            // 启用自校准按钮
+            button1.Enabled = true;
+
+            // 状态更新
+            isOn = false;
+            button2.Text = "进入检测模式";  // 修改按钮文本为“进入检测模式”
+            label1.Text = "当前状态：待机";  // 状态显示为待机
+        }
+
         private void button3_Click(object sender, EventArgs e)
         {
            /* // 复位状态
@@ -102,49 +212,8 @@ namespace WinFormsApp1321
             MessageBox.Show("系统已恢复为待机状态！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
          //   StopCalibration(true);*/
         }
-
-        /*  private async Task RunCalibrationLoop(string selectedStandardFile, CancellationToken token)
-          {
-              DateTime lastCycleEndTime = DateTime.Now;
-              string iniPath = "C:\\system\\system.ini";
-
-              while (currentCycle < totalCycles)
-              {
-                  if (token.IsCancellationRequested)
-                  {
-                      MessageBox.Show("自校准任务已停止！", "停止", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                      StopCalibration();
-                      return;
-                  }
-
-                  currentCycle++;
-                  UpdateCycleLabel();
-
-                  bool isMatched = CompareIniFiles("D:\\标样\\样管1.ini", selectedStandardFile);
-
-                  if (!isMatched)
-                  {
-                      MessageBox.Show("出现缺陷数据异常！", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                      StopCalibration();
-                      return;
-                  }
-
-                  lastCycleEndTime = DateTime.Now;  // 记录本次循环的结束时间
-
-                  if (currentCycle >= totalCycles)
-                  {
-                      MessageBox.Show("检测完成！所有循环已执行。", "完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-                      DateTime validUntil = lastCycleEndTime.AddHours(2); // 计算有效期限
-                      WriteDeadlineToIni(iniPath, validUntil);  // 写入 system.ini
-                      UpdateValidUntilLabel(validUntil); // 更新 UI
-
-                      StopCalibration();
-                  }
-
-                  await Task.Delay(10000, token);
-              }
-          }*/
+ 
+        
         private async Task RunCalibrationLoop(string selectedStandardFile, CancellationToken token)
         {
             DateTime lastCycleEndTime = DateTime.Now;

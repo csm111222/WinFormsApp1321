@@ -37,6 +37,7 @@
             textBox3 = new TextBox();
             button3 = new Button();
             label3 = new Label();
+            label4 = new Label();
             SuspendLayout();
             // 
             // button1
@@ -129,13 +130,24 @@
             label3.Name = "label3";
             label3.Size = new Size(110, 31);
             label3.TabIndex = 8;
-            label3.Text = "循环次数";
+            label3.Text = "标定次数";
+            // 
+            // label4
+            // 
+            label4.AutoSize = true;
+            label4.Font = new Font("Microsoft YaHei UI", 18F, FontStyle.Regular, GraphicsUnit.Point);
+            label4.Location = new Point(324, 0);
+            label4.Name = "label4";
+            label4.Size = new Size(134, 31);
+            label4.TabIndex = 9;
+            label4.Text = "自校准模式";
             // 
             // SelectionForm
             // 
             AutoScaleDimensions = new SizeF(7F, 17F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(800, 450);
+            Controls.Add(label4);
             Controls.Add(label3);
             Controls.Add(button3);
             Controls.Add(textBox3);
@@ -163,5 +175,6 @@
         private TextBox textBox3;
         private Button button3;
         private Label label3;
+        private Label label4;
     }
 }
